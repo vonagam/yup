@@ -103,7 +103,7 @@ const proto = (SchemaType.prototype = {
   },
 
   concat(schema) {
-    if (!schema) return this;
+    if (!schema || schema === this) return this;
 
     if (schema._type !== this._type && this._type !== 'mixed')
       throw new TypeError(
@@ -126,8 +126,6 @@ const proto = (SchemaType.prototype = {
       next = next.test(fn.OPTIONS);
     });
 
-    next._type = schema._type;
-
     return next;
   },
 
@@ -136,20 +134,27 @@ const proto = (SchemaType.prototype = {
     return !this._typeCheck || this._typeCheck(v);
   },
 
-  resolve({ context, parent }) {
-    if (this._conditions.length) {
-      return this._conditions.reduce(
-        (schema, match) =>
-          match.resolve(schema, match.getValue(parent, context)),
-        this,
-      );
-    }
+  resolve(options) {
+    let schema = this;
+    let conditions = this._conditions;
 
-    return this;
+    if (!conditions.length) return this;
+
+    schema = schema.clone();
+    schema._conditions = [];
+
+    schema = conditions.reduce(
+      (schema, condition) => condition.resolve(schema, options),
+      schema,
+    );
+
+    schema = schema.resolve(options);
+
+    return schema;
   },
 
   cast(value, options = {}) {
-    let resolvedSchema = this.resolve(options);
+    let resolvedSchema = this.resolve({ ...options, value });
     let result = resolvedSchema._cast(value, options);
 
     if (
@@ -242,12 +247,12 @@ const proto = (SchemaType.prototype = {
   },
 
   validate(value, options = {}) {
-    let schema = this.resolve(options);
+    let schema = this.resolve({ ...options, value });
     return schema._validate(value, options);
   },
 
   validateSync(value, options = {}) {
-    let schema = this.resolve(options);
+    let schema = this.resolve({ ...options, value });
     let result, err;
 
     schema
@@ -270,7 +275,7 @@ const proto = (SchemaType.prototype = {
 
   isValidSync(value, options) {
     try {
-      this.validateSync(value, { ...options });
+      this.validateSync(value, options);
       return true;
     } catch (err) {
       if (err.name === 'ValidationError') return false;
@@ -382,11 +387,19 @@ const proto = (SchemaType.prototype = {
   },
 
   when(keys, options) {
+    if (arguments.length === 1) {
+      options = keys;
+      keys = '.';
+    } else if (isSchema(keys) || typeof keys === 'function') {
+      options = { ...options, is: keys };
+      keys = '.';
+    }
+
     var next = this.clone(),
       deps = [].concat(keys).map(key => new Ref(key));
 
     deps.forEach(dep => {
-      if (!dep.isContext) next._deps.push(dep.key);
+      if (dep.isSibling) next._deps.push(dep.key);
     });
 
     next._conditions.push(new Condition(deps, options));
@@ -501,6 +514,7 @@ for (const method of ['validate', 'validateSync'])
       options.context,
     );
 
+    // return schema[method](path ? parent && parent[parentPath] : value, {
     return schema[method](parent && parent[parentPath], {
       ...options,
       parent,

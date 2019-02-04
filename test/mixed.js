@@ -1,4 +1,15 @@
-import { array, mixed, string, number, object, ref, reach, bool } from '../src';
+import {
+  array,
+  mixed,
+  string,
+  number,
+  object,
+  ref,
+  reach,
+  bool,
+  lazy,
+  ValidationError,
+} from '../src';
 let noop = () => {};
 
 function ensureSync(fn) {
@@ -699,6 +710,23 @@ describe('Mixed Types ', () => {
     });
 
     inst.default().should.eql({ prop: undefined });
+  });
+
+  it('should allow nested conditions and lazies', async function() {
+    let inst = mixed().when(string(), {
+      then: mixed().when({
+        is: value => /hello/.test(value),
+        then: lazy(() => string().min(6)),
+      }),
+    });
+
+    await inst.validate(5).should.be.fulfilled();
+
+    await inst
+      .validate('hello')
+      .should.be.rejectedWith(ValidationError, /must be at least/);
+
+    await inst.validate('hello, world').should.be.fulfilled();
   });
 
   it('should use label in error message', async function() {

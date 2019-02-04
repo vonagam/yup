@@ -2,16 +2,19 @@ import isSchema from './util/isSchema';
 
 class Lazy {
   constructor(mapFn) {
-    this._resolve = (...args) => {
-      let schema = mapFn(...args);
+    this._resolve = (value, options) => {
+      let schema = mapFn(value, options);
+
       if (!isSchema(schema))
         throw new TypeError('lazy() functions must return a valid schema');
+
+      schema = schema.resolve(options);
 
       return schema;
     };
   }
-  resolve({ value, ...rest }) {
-    return this._resolve(value, rest);
+  resolve(options) {
+    return this._resolve(options.value, options);
   }
   cast(value, options) {
     return this._resolve(value, options).cast(value, options);
